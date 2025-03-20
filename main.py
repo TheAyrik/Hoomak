@@ -435,7 +435,7 @@ def main() -> None:
                 CommandHandler("cancel", cancel)
             ]
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", cancel)],
         per_message=True
     )
 
