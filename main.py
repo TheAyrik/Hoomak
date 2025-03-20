@@ -10,7 +10,7 @@ from telegram.ext import (
     ConversationHandler,
     ContextTypes,
 )
-import telegram.ext.filters as filters  
+import telegram.ext.filters as filters  # تغییر به filters
 from dotenv import load_dotenv
 import logging
 
@@ -407,8 +407,8 @@ def main() -> None:
         states={
             TITLE: [MessageHandler(filters.Text() & ~filters.Command(), get_title)],
             DESCRIPTION: [MessageHandler(filters.Text() & ~filters.Command(), get_description)],
-            MAIN_IMAGE: [MessageHandler(filters.Photo(), get_main_image)],
-            GALLERY_IMAGES: [MessageHandler(filters.Photo() | filters.Regex('^/done$'), get_gallery_images)],
+            MAIN_IMAGE: [MessageHandler(filters.PHOTO, get_main_image)],  # تغییر به filters.PHOTO
+            GALLERY_IMAGES: [MessageHandler(filters.PHOTO | filters.Regex('^/done$'), get_gallery_images)],  # تغییر به filters.PHOTO
             SIZES: [MessageHandler(filters.Text() & ~filters.Command(), get_sizes)],
             COLOR: [
                 CallbackQueryHandler(get_color, pattern='^color_'),
