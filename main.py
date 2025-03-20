@@ -10,7 +10,7 @@ from telegram.ext import (
     ConversationHandler,
     ContextTypes,
 )
-import telegram.ext.filters as filters  # تغییر به filters
+import telegram.ext.filters as filters
 from dotenv import load_dotenv
 import logging
 
@@ -71,7 +71,12 @@ def create_woocommerce_json(user_data):
     sizes_list = user_data.get("sizes", "").split(",")
     gallery_list = user_data.get("gallery_images", [])
     tags_list = [{"name": tag.strip()} for tag in user_data.get("tags", "").split(",")] if user_data.get("tags") else []
-    usage_list = user_data.get("usage", "").split(",")
+    # چک کن که usage یه لیست هست یا رشته
+    usage_list = user_data.get("usage", [])
+    if isinstance(usage_list, str):
+        usage_list = usage_list.split(",")
+    if not usage_list:
+        usage_list = []
 
     attributes = [
         {"name": "سایز", "options": sizes_list, "variation": True},
@@ -139,12 +144,14 @@ async def get_main_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     image_data = await file.download_as_bytearray()
     image_url = upload_image_to_wordpress(image_data, f"main_{photo.file_id}.jpg")
     user_data[update.message.from_user.id]["main_image"] = image_url
-    await update.message.reply_text("عکس‌های گالری محصول رو آپلود کن (برای اتمام، /done رو بنویس):")
     user_data[update.message.from_user.id]["gallery_images"] = []
+    user_data[update.message.from_user.id]["gallery_message_sent"] = False
+    await update.message.reply_text("عکس‌های گالری محصول رو آپلود کن (برای اتمام، /done رو بنویس):")
     return GALLERY_IMAGES
 
 # گرفتن عکس‌های گالری
 async def get_gallery_images(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.message.from_user.id
     if update.message.text == "/done":
         await update.message.reply_text("سایزهای محصول رو با کاما جدا کن (مثلاً 41,42,43):")
         return SIZES
@@ -152,19 +159,18 @@ async def get_gallery_images(update: Update, context: ContextTypes.DEFAULT_TYPE)
     file = await photo.get_file()
     image_data = await file.download_as_bytearray()
     image_url = upload_image_to_wordpress(image_data, f"gallery_{photo.file_id}.jpg")
-    user_data[update.message.from_user.id]["gallery_images"].append(image_url)
-    await update.message.reply_text("عکس بعدی رو آپلود کن یا /done رو بنویس:")
+    user_data[user_id]["gallery_images"].append(image_url)
+    if not user_data[user_id].get("gallery_message_sent", False):
+        user_data[user_id]["gallery_message_sent"] = True
+        await update.message.reply_text("عکس بعدی رو آپلود کن یا /done رو بنویس:")
     return GALLERY_IMAGES
 
 # گرفتن سایزها
 async def get_sizes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_data[update.message.from_user.id]["sizes"] = update.message.text
-    # گرفتن مقادیر رنگ از ووکامرس (فرض می‌کنیم ID رنگ 1 است)
-    colors = get_attribute_terms(1)  # ID ویژگی رنگ
-    keyboard = [
-        [InlineKeyboardButton(color["name"], callback_data=f"color_{color['name']}") for color in colors],
-        [InlineKeyboardButton("اضافه کردن رنگ جدید", callback_data="color_new")]
-    ]
+    colors = get_attribute_terms(1)
+    keyboard = [[InlineKeyboardButton(color["name"], callback_data=f"color_{color['name']}")] for color in colors]
+    keyboard.append([InlineKeyboardButton("اضافه کردن رنگ جدید", callback_data="color_new")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("رنگ محصول رو انتخاب کن:", reply_markup=reply_markup)
     return COLOR
@@ -182,12 +188,9 @@ async def get_color(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         color = data.replace("color_", "")
         user_data[user_id]["color"] = color
-        # گرفتن مقادیر جنس رویه (فرض می‌کنیم ID جنس رویه 4 است)
         uppers = get_attribute_terms(4)
-        keyboard = [
-            [InlineKeyboardButton(upper["name"], callback_data=f"upper_{upper['name']}") for upper in uppers],
-            [InlineKeyboardButton("اضافه کردن جنس رویه جدید", callback_data="upper_new")]
-        ]
+        keyboard = [[InlineKeyboardButton(upper["name"], callback_data=f"upper_{upper['name']}")] for upper in uppers]
+        keyboard.append([InlineKeyboardButton("اضافه کردن جنس رویه جدید", callback_data="upper_new")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text("جنس رویه رو انتخاب کن:", reply_markup=reply_markup)
         return UPPER
@@ -196,18 +199,14 @@ async def get_color(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def get_color_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.message.from_user.id
     color = update.message.text
-    # اضافه کردن رنگ جدید به ووکامرس (ID رنگ 1)
     new_color = add_attribute_term(1, color)
     if new_color:
         user_data[user_id]["color"] = new_color
     else:
-        user_data[user_id]["color"] = color  # در صورت خطا، همون مقدار وارد شده
-    # گرفتن مقادیر جنس رویه
+        user_data[user_id]["color"] = color
     uppers = get_attribute_terms(4)
-    keyboard = [
-        [InlineKeyboardButton(upper["name"], callback_data=f"upper_{upper['name']}") for upper in uppers],
-        [InlineKeyboardButton("اضافه کردن جنس رویه جدید", callback_data="upper_new")]
-    ]
+    keyboard = [[InlineKeyboardButton(upper["name"], callback_data=f"upper_{upper['name']}")] for upper in uppers]
+    keyboard.append([InlineKeyboardButton("اضافه کردن جنس رویه جدید", callback_data="upper_new")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("جنس رویه رو انتخاب کن:", reply_markup=reply_markup)
     return UPPER
@@ -225,12 +224,9 @@ async def get_upper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         upper = data.replace("upper_", "")
         user_data[user_id]["upper"] = upper
-        # گرفتن مقادیر جنس زیره (فرض می‌کنیم ID جنس زیره 5 است)
         soles = get_attribute_terms(5)
-        keyboard = [
-            [InlineKeyboardButton(sole["name"], callback_data=f"sole_{sole['name']}") for sole in soles],
-            [InlineKeyboardButton("اضافه کردن جنس زیره جدید", callback_data="sole_new")]
-        ]
+        keyboard = [[InlineKeyboardButton(sole["name"], callback_data=f"sole_{sole['name']}")] for sole in soles]
+        keyboard.append([InlineKeyboardButton("اضافه کردن جنس زیره جدید", callback_data="sole_new")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text("جنس زیره رو انتخاب کن:", reply_markup=reply_markup)
         return SOLE
@@ -245,10 +241,8 @@ async def get_upper_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         user_data[user_id]["upper"] = upper
     soles = get_attribute_terms(5)
-    keyboard = [
-        [InlineKeyboardButton(sole["name"], callback_data=f"sole_{sole['name']}") for sole in soles],
-        [InlineKeyboardButton("اضافه کردن جنس زیره جدید", callback_data="sole_new")]
-    ]
+    keyboard = [[InlineKeyboardButton(sole["name"], callback_data=f"sole_{sole['name']}")] for sole in soles]
+    keyboard.append([InlineKeyboardButton("اضافه کردن جنس زیره جدید", callback_data="sole_new")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("جنس زیره رو انتخاب کن:", reply_markup=reply_markup)
     return SOLE
@@ -266,12 +260,9 @@ async def get_sole(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         sole = data.replace("sole_", "")
         user_data[user_id]["sole"] = sole
-        # گرفتن مقادیر کاربرد (فرض می‌کنیم ID کاربرد 6 است)
         usages = get_attribute_terms(6)
-        keyboard = [
-            [InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}") for usage in usages],
-            [InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")]
-        ]
+        keyboard = [[InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}")] for usage in usages]
+        keyboard.append([InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):")
         user_data[user_id]["usage"] = []
@@ -287,10 +278,8 @@ async def get_sole_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         user_data[user_id]["sole"] = sole
     usages = get_attribute_terms(6)
-    keyboard = [
-        [InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}") for usage in usages],
-        [InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")]
-    ]
+    keyboard = [[InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}")] for usage in usages]
+    keyboard.append([InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):")
     user_data[user_id]["usage"] = []
@@ -313,11 +302,9 @@ async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         usage = data.replace("usage_", "")
         user_data[user_id]["usage"].append(usage)
         usages = get_attribute_terms(6)
-        keyboard = [
-            [InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}") for usage in usages],
-            [InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")],
-            [InlineKeyboardButton("اتمام انتخاب کاربرد", callback_data="usage_done")]
-        ]
+        keyboard = [[InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}")] for usage in usages]
+        keyboard.append([InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")])
+        keyboard.append([InlineKeyboardButton("اتمام انتخاب کاربرد", callback_data="usage_done")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text("کاربرد دیگه‌ای انتخاب کن یا اتمام رو بزن:", reply_markup=reply_markup)
         return USAGE
@@ -332,11 +319,9 @@ async def get_usage_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         user_data[user_id]["usage"].append(usage)
     usages = get_attribute_terms(6)
-    keyboard = [
-        [InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}") for usage in usages],
-        [InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")],
-        [InlineKeyboardButton("اتمام انتخاب کاربرد", callback_data="usage_done")]
-    ]
+    keyboard = [[InlineKeyboardButton(usage["name"], callback_data=f"usage_{usage['name']}")] for usage in usages]
+    keyboard.append([InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")])
+    keyboard.append([InlineKeyboardButton("اتمام انتخاب کاربرد", callback_data="usage_done")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("کاربرد دیگه‌ای انتخاب کن یا اتمام رو بزن:", reply_markup=reply_markup)
     return USAGE
@@ -407,8 +392,8 @@ def main() -> None:
         states={
             TITLE: [MessageHandler(filters.Text() & ~filters.Command(), get_title)],
             DESCRIPTION: [MessageHandler(filters.Text() & ~filters.Command(), get_description)],
-            MAIN_IMAGE: [MessageHandler(filters.PHOTO, get_main_image)],  # تغییر به filters.PHOTO
-            GALLERY_IMAGES: [MessageHandler(filters.PHOTO | filters.Regex('^/done$'), get_gallery_images)],  # تغییر به filters.PHOTO
+            MAIN_IMAGE: [MessageHandler(filters.PHOTO, get_main_image)],
+            GALLERY_IMAGES: [MessageHandler(filters.PHOTO | filters.Regex('^/done$'), get_gallery_images)],
             SIZES: [MessageHandler(filters.Text() & ~filters.Command(), get_sizes)],
             COLOR: [
                 CallbackQueryHandler(get_color, pattern='^color_'),
