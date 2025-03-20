@@ -102,7 +102,6 @@ def create_woocommerce_json(user_data):
         "type": "variable",
         "description": user_data.get("description"),
         "sku": user_data.get("sku"),
-        "slug": user_data.get("sku").lower(),  # تنظیم slug برابر با sku
         "regular_price": str(user_data.get("price")),
         "attributes": attributes,
         "variations": variations,
