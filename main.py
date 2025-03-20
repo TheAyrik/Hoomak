@@ -436,7 +436,7 @@ def main() -> None:
             ]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=True
+        per_message=False
     )
 
     application.add_handler(conv_handler)
