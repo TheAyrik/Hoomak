@@ -10,8 +10,7 @@ from telegram.ext import (
     ConversationHandler,
     ContextTypes,
 )
-from telegram import Update
-import telegram.ext.filters as filters
+import telegram.ext.filters as filters  
 from dotenv import load_dotenv
 import logging
 
@@ -406,31 +405,31 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            TITLE: [MessageHandler(filters.text & ~filters.command, get_title)],
-            DESCRIPTION: [MessageHandler(filters.text & ~filters.command, get_description)],
-            MAIN_IMAGE: [MessageHandler(filters.photo, get_main_image)],
-            GALLERY_IMAGES: [MessageHandler(filters.photo | filters.regex('^/done$'), get_gallery_images)],
-            SIZES: [MessageHandler(filters.text & ~filters.command, get_sizes)],
+            TITLE: [MessageHandler(filters.Text() & ~filters.Command(), get_title)],
+            DESCRIPTION: [MessageHandler(filters.Text() & ~filters.Command(), get_description)],
+            MAIN_IMAGE: [MessageHandler(filters.Photo(), get_main_image)],
+            GALLERY_IMAGES: [MessageHandler(filters.Photo() | filters.Regex('^/done$'), get_gallery_images)],
+            SIZES: [MessageHandler(filters.Text() & ~filters.Command(), get_sizes)],
             COLOR: [
                 CallbackQueryHandler(get_color, pattern='^color_'),
-                MessageHandler(filters.text & ~filters.command, get_color_text)
+                MessageHandler(filters.Text() & ~filters.Command(), get_color_text)
             ],
             UPPER: [
                 CallbackQueryHandler(get_upper, pattern='^upper_'),
-                MessageHandler(filters.text & ~filters.command, get_upper_text)
+                MessageHandler(filters.Text() & ~filters.Command(), get_upper_text)
             ],
             SOLE: [
                 CallbackQueryHandler(get_sole, pattern='^sole_'),
-                MessageHandler(filters.text & ~filters.command, get_sole_text)
+                MessageHandler(filters.Text() & ~filters.Command(), get_sole_text)
             ],
             USAGE: [
                 CallbackQueryHandler(get_usage, pattern='^usage_'),
-                MessageHandler(filters.text & ~filters.command, get_usage_text)
+                MessageHandler(filters.Text() & ~filters.Command(), get_usage_text)
             ],
-            SKU: [MessageHandler(filters.text & ~filters.command, get_sku)],
-            PRICE: [MessageHandler(filters.text & ~filters.command, get_price)],
-            TAGS: [MessageHandler(filters.text & ~filters.command, get_tags)],
-            BRAND: [MessageHandler(filters.text & ~filters.command, get_brand)],
+            SKU: [MessageHandler(filters.Text() & ~filters.Command(), get_sku)],
+            PRICE: [MessageHandler(filters.Text() & ~filters.Command(), get_price)],
+            TAGS: [MessageHandler(filters.Text() & ~filters.Command(), get_tags)],
+            BRAND: [MessageHandler(filters.Text() & ~filters.Command(), get_brand)],
             CONFIRM: [
                 CommandHandler("confirm", confirm),
                 CommandHandler("cancel", cancel)
