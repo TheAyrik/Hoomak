@@ -475,10 +475,20 @@ async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # تأیید و ارسال به ووکامرس
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
     product_json = user_data[user_id]["json"]
     try:
         product_id = create_product_in_woocommerce(product_json)
+        # پاکسازی پیام‌های قبلی
+        for key in ["color_message_id", "upper_message_id", "sole_message_id", "usage_message_id"]:
+            if key in user_data[user_id]:
+                try:
+                    await context.bot.delete_message(
+                        chat_id=update.message.chat_id,
+                        message_id=user_data[user_id][key]
+                    )
+                except Exception as e:
+                    logger.warning(f"خطا در پاکسازی پیام {key}: {str(e)}")
         await update.message.reply_text(f"محصول با موفقیت ساخته شد! ID: {product_id}")
     except Exception as e:
         await update.message.reply_text(f"خطا در ساخت محصول: {str(e)}")
@@ -579,6 +589,12 @@ async def edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         update_product_in_woocommerce(product_id, {"regular_price": str(new_price)})
         # آپدیت قیمت متغیرها
         update_variations_price(product_id, new_price)
+        # پاکسازی پیام قبلی
+        if "edit_message_id" in user_data[user_id]:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=user_data[user_id]["edit_message_id"]
+            )
         await update.message.reply_text(f"قیمت محصول و متغیرهای آن با موفقیت به {new_price} تغییر کرد!")
     except ValueError:
         await update.message.reply_text("لطفاً یک عدد معتبر وارد کنید!")
@@ -608,7 +624,7 @@ async def edit_stock_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 # ویرایش موجودی به‌صورت یکنواخت
 async def edit_stock_uniform(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = str(update.message.from_user.id)  # اصلاح user_id
+    user_id = str(update.message.from_user.id)
     stock = update.message.text
     try:
         stock = int(stock)
@@ -616,6 +632,12 @@ async def edit_stock_uniform(update: Update, context: ContextTypes.DEFAULT_TYPE)
         product_id = product["id"]
         update_product_in_woocommerce(product_id, {"manage_stock": True})
         update_variations_stock(product_id, stock)
+        # پاکسازی پیام قبلی
+        if "edit_message_id" in user_data[user_id]:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=user_data[user_id]["edit_message_id"]
+            )
         await update.message.reply_text(f"موجودی همه متغیرها با موفقیت به {stock} تغییر کرد!")
     except ValueError:
         await update.message.reply_text("لطفاً یک عدد معتبر وارد کنید!")
@@ -628,7 +650,7 @@ async def edit_stock_uniform(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ویرایش موجودی به‌صورت جداگانه
 async def edit_stock_array(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = str(update.message.from_user.id)  # اصلاح user_id
+    user_id = str(update.message.from_user.id)
     stock_input = update.message.text
     try:
         stock_data = [int(x.strip()) for x in stock_input.split(",")]
@@ -636,6 +658,12 @@ async def edit_stock_array(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         product_id = product["id"]
         update_product_in_woocommerce(product_id, {"manage_stock": True})
         update_variations_stock(product_id, stock_data)
+        # پاکسازی پیام قبلی
+        if "edit_message_id" in user_data[user_id]:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=user_data[user_id]["edit_message_id"]
+            )
         await update.message.reply_text("موجودی متغیرها با موفقیت تغییر کرد!")
     except ValueError:
         await update.message.reply_text("لطفاً اعداد را با کاما جدا کنید (مثلاً 1,2,3,0)!")
