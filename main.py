@@ -502,19 +502,21 @@ async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
         logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
         return ConversationHandler.END
-    # ایجاد دیکشنری برای کاربر
-    user_data[user_id] = {}
+    user_data[user_id] = {}  # ایجاد دیکشنری برای کاربر
     await update.message.reply_text("لطفاً SKU محصولی که می‌خواهید ویرایش کنید را وارد کنید (مثلاً NK-J23-WB-M):")
     return EDIT_SKU
 
 # گرفتن SKU برای ویرایش
 async def edit_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)  # مطمئن می‌شیم user_id به‌صورت str باشه
     sku = update.message.text
     product = find_product_by_sku(sku)
     if not product:
         await update.message.reply_text("محصول با این SKU پیدا نشد. لطفاً دوباره امتحان کنید یا /cancel را بزنید.")
         return EDIT_SKU
+    # چک کردن و ایجاد دیکشنری اگه وجود نداشته باشه
+    if user_id not in user_data:
+        user_data[user_id] = {}
     user_data[user_id]["edit_product"] = product
     keyboard = [
         [InlineKeyboardButton("ویرایش قیمت", callback_data="edit_price")],
@@ -543,7 +545,7 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 # ویرایش قیمت
 async def edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)  # اصلاح user_id
     new_price = update.message.text
     try:
         new_price = int(new_price)  # مطمئن می‌شیم که عدد معتبره
@@ -569,7 +571,7 @@ async def edit_stock_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text("موجودی جدید را وارد کنید (مثلاً 10 یا 0 برای ناموجود کردن):")
         return EDIT_STOCK_UNIFORM
     elif data == "stock_array":
-        user_id = query.from_user.id
+        user_id = str(query.from_user.id)  # اصلاح user_id
         product = user_data[user_id]["edit_product"]
         variations = product.get("variations", [])
         await query.message.reply_text(
@@ -579,7 +581,7 @@ async def edit_stock_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 # ویرایش موجودی به‌صورت یکنواخت
 async def edit_stock_uniform(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)  # اصلاح user_id
     stock = update.message.text
     try:
         stock = int(stock)
@@ -599,7 +601,7 @@ async def edit_stock_uniform(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ویرایش موجودی به‌صورت جداگانه
 async def edit_stock_array(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)  # اصلاح user_id
     stock_input = update.message.text
     try:
         stock_data = [int(x.strip()) for x in stock_input.split(",")]
