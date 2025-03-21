@@ -440,7 +440,6 @@ async def webhook_handler(request):
 async def ping_handler(request):
     return web.Response(text="OK")
 
-# تابع اصلی
 def main() -> None:
     global app
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -485,25 +484,34 @@ def main() -> None:
     app.add_handler(conv_handler)
     app.add_error_handler(error_handler)
 
-    # تنظیم سرور aiohttp برای Webhook و پینگ
+    # تنظیم سرور aiohttp
     aiohttp_app = web.Application()
     aiohttp_app.router.add_post('/webhook', webhook_handler)
     aiohttp_app.router.add_get('/ping', ping_handler)
 
-    # اضافه کردن Webhook به اپلیکیشن تلگرام
-    async def on_startup():
+    # تابع startup برای تنظیم Webhook
+    async def on_startup(_):
         await app.initialize()
         await app.start()
-        await app.updater.start_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path="/webhook",
-            webhook_url=WEBHOOK_URL
-        )
-        logger.info("Webhook started successfully")
+        # تنظیم دستی Webhook
+        webhook_set = await app.bot.set_webhook(url=WEBHOOK_URL)
+        if webhook_set:
+            logger.info("Webhook به درستی تنظیم شد")
+        else:
+            logger.error("خطا در تنظیم Webhook")
+        logger.info("اپلیکیشن شروع شد")
 
-    # اجرای سرور aiohttp
-    aiohttp_app.on_startup.append(lambda _: on_startup())
+    # تابع shutdown برای تمیز کردن
+    async def on_shutdown(_):
+        await app.stop()
+        await app.shutdown()
+        logger.info("اپلیکیشن متوقف شد")
+
+    # اضافه کردن startup و shutdown
+    aiohttp_app.on_startup.append(on_startup)
+    aiohttp_app.on_shutdown.append(on_shutdown)
+
+    # اجرای سرور
     web.run_app(aiohttp_app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
