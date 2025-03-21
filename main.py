@@ -491,7 +491,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # خطاها
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(f"خطا رخ داد: {context.error}")
+    logger.error(f"خطا رخ داد: {context.error}", exc_info=True)  # اضافه کردن exc_info برای لاگ دقیق‌تر
     if update and update.message:
         await update.message.reply_text("یه خطا پیش اومد! لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
 
