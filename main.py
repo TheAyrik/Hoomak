@@ -502,6 +502,8 @@ async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
         logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
         return ConversationHandler.END
+    # ایجاد دیکشنری برای کاربر
+    user_data[user_id] = {}
     await update.message.reply_text("لطفاً SKU محصولی که می‌خواهید ویرایش کنید را وارد کنید (مثلاً NK-J23-WB-M):")
     return EDIT_SKU
 
