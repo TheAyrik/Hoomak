@@ -198,14 +198,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
         logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
         return ConversationHandler.END
+    user_data[user_id] = {}  # ایجاد دیکشنری برای کاربر
     await update.message.reply_text("سلام! بیایم یه محصول جدید بسازیم.\nعنوان محصول رو بنویس:")
     logger.info(f"کاربر مجاز وارد شد: {user_id}")
     return TITLE
 
 # گرفتن عنوان
 async def get_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_data[update.message.from_user.id] = {}
-    user_data[update.message.from_user.id]["title"] = update.message.text
+    user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    user_data[user_id]["title"] = update.message.text
     await update.message.reply_text("توضیحات محصول رو بنویس:")
     return DESCRIPTION
 
@@ -246,13 +249,15 @@ async def get_gallery_images(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # گرفتن سایزها
 async def get_sizes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
     user_data[user_id]["sizes"] = update.message.text
     colors = get_attribute_terms(1)
     keyboard = [[InlineKeyboardButton(color["name"], callback_data=f"color_{color['name']}")] for color in colors]
     keyboard.append([InlineKeyboardButton("اضافه کردن رنگ جدید", callback_data="color_new")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     message = await update.message.reply_text("رنگ محصول رو انتخاب کن:", reply_markup=reply_markup)
-    user_data[user_id]["color_message_id"] = message.message_id  # ذخیره ID پیام
+    user_data[user_id]["color_message_id"] = message.message_id
     return COLOR
 
 # مدیریت انتخاب رنگ
@@ -505,9 +510,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # خطاها
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(f"خطا رخ داد: {context.error}", exc_info=True)  # اضافه کردن exc_info برای لاگ دقیق‌تر
-    if update and update.message:
+    logger.error(f"خطا رخ داد: {context.error}", exc_info=True)
+    if update and update.message and update.message.from_user:
         await update.message.reply_text("یه خطا پیش اومد! لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
+    else:
+        logger.warning("پیام برای ارسال پاسخ خطا موجود نیست.")
 
 def update_variations_price(product_id, new_price):
     url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
