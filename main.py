@@ -495,6 +495,25 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if update and update.message:
         await update.message.reply_text("یه خطا پیش اومد! لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
 
+def update_variations_price(product_id, new_price):
+    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    variations_response = requests.get(url, auth=auth)
+    if variations_response.status_code != 200:
+        logger.error(f"خطا در گرفتن متغیرها: {variations_response.status_code} - {variations_response.text}")
+        raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
+
+    variations = variations_response.json()
+    for variation in variations:
+        variation_id = variation['id']
+        variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+        response = requests.put(variation_url, auth=auth, json={
+            "regular_price": str(new_price)
+        })
+        if response.status_code != 200:
+            logger.error(f"خطا در به‌روزرسانی قیمت متغیر {variation_id}: {response.status_code} - {response.text}")
+            raise Exception("مشکلی در به‌روزرسانی قیمت متغیرها پیش اومد.")
+
 # تابع برای شروع ویرایش محصول
 async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
@@ -545,14 +564,17 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 # ویرایش قیمت
 async def edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = str(update.message.from_user.id)  # اصلاح user_id
+    user_id = str(update.message.from_user.id)
     new_price = update.message.text
     try:
         new_price = int(new_price)  # مطمئن می‌شیم که عدد معتبره
         product = user_data[user_id]["edit_product"]
         product_id = product["id"]
+        # آپدیت قیمت محصول اصلی
         update_product_in_woocommerce(product_id, {"regular_price": str(new_price)})
-        await update.message.reply_text(f"قیمت محصول با موفقیت به {new_price} تغییر کرد!")
+        # آپدیت قیمت متغیرها
+        update_variations_price(product_id, new_price)
+        await update.message.reply_text(f"قیمت محصول و متغیرهای آن با موفقیت به {new_price} تغییر کرد!")
     except ValueError:
         await update.message.reply_text("لطفاً یک عدد معتبر وارد کنید!")
         return EDIT_PRICE
