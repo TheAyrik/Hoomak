@@ -75,7 +75,8 @@ def upload_image_to_wordpress(image_data, filename):
     response = requests.post(url, auth=auth, files=files, headers=headers)
     if response.status_code == 201:
         return response.json().get('source_url')
-    raise Exception(f"خطا در آپلود: {response.status_code} - {response.text}")
+    logger.error(f"خطا در آپلود عکس: {response.status_code} - {response.text}")
+    raise Exception("مشکلی در آپلود عکس پیش اومد. لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
 
 # تابع برای ساخت JSON محصول
 def create_woocommerce_json(user_data):
@@ -136,7 +137,8 @@ def create_product_in_woocommerce(product_json):
             variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
             requests.post(variation_url, auth=auth, json=variation)
         return product_id
-    raise Exception(f"خطا: {response.status_code} - {response.text}")
+    logger.error(f"خطا در ارسال محصول به ووکامرس: {response.status_code} - {response.text}")
+    raise Exception("مشکلی در ثبت محصول پیش اومد. لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
 
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -438,8 +440,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # خطاها
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(f"Update {update} caused error {context.error}")
-    await update.message.reply_text("یه خطا پیش اومد! لطفاً دوباره امتحان کن.")
+    logger.error(f"خطا رخ داد: {context.error}")
+    if update and update.message:
+        await update.message.reply_text("یه خطا پیش اومد! لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
 
 # تابع برای مدیریت درخواست‌های Webhook
 async def webhook_handler(request):
