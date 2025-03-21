@@ -41,8 +41,9 @@ if not RENDER_EXTERNAL_HOSTNAME:
 # مراحل ConversationHandler
 (
     TITLE, DESCRIPTION, MAIN_IMAGE, GALLERY_IMAGES, SIZES, COLOR, UPPER, SOLE, USAGE,
-    SKU, PRICE, TAGS, BRAND, CONFIRM
-) = range(14)
+    SKU, PRICE, TAGS, BRAND, CONFIRM,
+    EDIT_SKU, EDIT_CHOICE, EDIT_PRICE, EDIT_STOCK_MODE, EDIT_STOCK_UNIFORM, EDIT_STOCK_ARRAY
+) = range(20)
 
 # دیکشنری برای ذخیره داده‌های کاربر
 user_data = {}
@@ -139,6 +140,56 @@ def create_product_in_woocommerce(product_json):
         return product_id
     logger.error(f"خطا در ارسال محصول به ووکامرس: {response.status_code} - {response.text}")
     raise Exception("مشکلی در ثبت محصول پیش اومد. لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
+
+# تابع برای پیدا کردن محصول با SKU
+def find_product_by_sku(sku):
+    url = f"{WP_URL}/wp-json/wc/v3/products?sku={sku}"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    response = requests.get(url, auth=auth)
+    if response.status_code == 200 and response.json():
+        return response.json()[0]  # اولین محصول با این SKU
+    logger.error(f"محصول با SKU {sku} پیدا نشد: {response.status_code} - {response.text}")
+    return None
+
+# تابع برای به‌روزرسانی محصول در ووکامرس
+def update_product_in_woocommerce(product_id, data):
+    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    response = requests.put(url, auth=auth, json=data)
+    if response.status_code == 200:
+        return response.json()
+    logger.error(f"خطا در به‌روزرسانی محصول: {response.status_code} - {response.text}")
+    raise Exception("مشکلی در به‌روزرسانی محصول پیش اومد. لطفاً دوباره امتحان کنید.")
+
+# تابع برای به‌روزرسانی موجودی متغیرها
+def update_variations_stock(product_id, stock_data):
+    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    variations_response = requests.get(url, auth=auth)
+    if variations_response.status_code != 200:
+        logger.error(f"خطا در گرفتن متغیرها: {variations_response.status_code} - {variations_response.text}")
+        raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
+
+    variations = variations_response.json()
+    if isinstance(stock_data, int):  # حالت یکنواخت
+        for variation in variations:
+            variation_id = variation['id']
+            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+            requests.put(variation_url, auth=auth, json={
+                "manage_stock": True,
+                "stock_quantity": stock_data,
+                "stock_status": "instock" if stock_data > 0 else "outofstock"
+            })
+    else:  # حالت آرایه
+        for i, variation in enumerate(variations):
+            variation_id = variation['id']
+            stock = stock_data[i] if i < len(stock_data) else 0
+            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+            requests.put(variation_url, auth=auth, json={
+                "manage_stock": True,
+                "stock_quantity": stock,
+                "stock_status": "instock" if stock > 0 else "outofstock"
+            })
 
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -444,6 +495,126 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if update and update.message:
         await update.message.reply_text("یه خطا پیش اومد! لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
 
+# تابع برای شروع ویرایش محصول
+async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    if not ALLOWED_USERS or user_id not in ALLOWED_USERS:
+        await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
+        logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
+        return ConversationHandler.END
+    await update.message.reply_text("لطفاً SKU محصولی که می‌خواهید ویرایش کنید را وارد کنید (مثلاً NK-J23-WB-M):")
+    return EDIT_SKU
+
+# گرفتن SKU برای ویرایش
+async def edit_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.message.from_user.id
+    sku = update.message.text
+    product = find_product_by_sku(sku)
+    if not product:
+        await update.message.reply_text("محصول با این SKU پیدا نشد. لطفاً دوباره امتحان کنید یا /cancel را بزنید.")
+        return EDIT_SKU
+    user_data[user_id]["edit_product"] = product
+    keyboard = [
+        [InlineKeyboardButton("ویرایش قیمت", callback_data="edit_price")],
+        [InlineKeyboardButton("ویرایش موجودی", callback_data="edit_stock")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("چه چیزی را می‌خواهید ویرایش کنید؟", reply_markup=reply_markup)
+    return EDIT_CHOICE
+
+# انتخاب نوع ویرایش
+async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == "edit_price":
+        await query.message.reply_text("قیمت جدید را وارد کنید (مثلاً 600000):")
+        return EDIT_PRICE
+    elif data == "edit_stock":
+        keyboard = [
+            [InlineKeyboardButton("تغییر یکنواخت برای همه متغیرها", callback_data="stock_uniform")],
+            [InlineKeyboardButton("تغییر جداگانه برای هر متغیر", callback_data="stock_array")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("چگونه می‌خواهید موجودی را تغییر دهید؟", reply_markup=reply_markup)
+        return EDIT_STOCK_MODE
+
+# ویرایش قیمت
+async def edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.message.from_user.id
+    new_price = update.message.text
+    try:
+        new_price = int(new_price)  # مطمئن می‌شیم که عدد معتبره
+        product = user_data[user_id]["edit_product"]
+        product_id = product["id"]
+        update_product_in_woocommerce(product_id, {"regular_price": str(new_price)})
+        await update.message.reply_text(f"قیمت محصول با موفقیت به {new_price} تغییر کرد!")
+    except ValueError:
+        await update.message.reply_text("لطفاً یک عدد معتبر وارد کنید!")
+        return EDIT_PRICE
+    except Exception as e:
+        await update.message.reply_text(f"خطا: {str(e)}")
+    finally:
+        user_data.pop(user_id, None)
+    return ConversationHandler.END
+
+# انتخاب حالت ویرایش موجودی
+async def edit_stock_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == "stock_uniform":
+        await query.message.reply_text("موجودی جدید را وارد کنید (مثلاً 10 یا 0 برای ناموجود کردن):")
+        return EDIT_STOCK_UNIFORM
+    elif data == "stock_array":
+        user_id = query.from_user.id
+        product = user_data[user_id]["edit_product"]
+        variations = product.get("variations", [])
+        await query.message.reply_text(
+            f"برای هر متغیر یک عدد وارد کنید (به ترتیب سایزها، با کاما جدا کنید، مثلاً 1,2,3,0 برای {len(variations)} متغیر):"
+        )
+        return EDIT_STOCK_ARRAY
+
+# ویرایش موجودی به‌صورت یکنواخت
+async def edit_stock_uniform(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.message.from_user.id
+    stock = update.message.text
+    try:
+        stock = int(stock)
+        product = user_data[user_id]["edit_product"]
+        product_id = product["id"]
+        update_product_in_woocommerce(product_id, {"manage_stock": True})
+        update_variations_stock(product_id, stock)
+        await update.message.reply_text(f"موجودی همه متغیرها با موفقیت به {stock} تغییر کرد!")
+    except ValueError:
+        await update.message.reply_text("لطفاً یک عدد معتبر وارد کنید!")
+        return EDIT_STOCK_UNIFORM
+    except Exception as e:
+        await update.message.reply_text(f"خطا: {str(e)}")
+    finally:
+        user_data.pop(user_id, None)
+    return ConversationHandler.END
+
+# ویرایش موجودی به‌صورت جداگانه
+async def edit_stock_array(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.message.from_user.id
+    stock_input = update.message.text
+    try:
+        stock_data = [int(x.strip()) for x in stock_input.split(",")]
+        product = user_data[user_id]["edit_product"]
+        product_id = product["id"]
+        update_product_in_woocommerce(product_id, {"manage_stock": True})
+        update_variations_stock(product_id, stock_data)
+        await update.message.reply_text("موجودی متغیرها با موفقیت تغییر کرد!")
+    except ValueError:
+        await update.message.reply_text("لطفاً اعداد را با کاما جدا کنید (مثلاً 1,2,3,0)!")
+        return EDIT_STOCK_ARRAY
+    except Exception as e:
+        await update.message.reply_text(f"خطا: {str(e)}")
+    finally:
+        user_data.pop(user_id, None)
+    return ConversationHandler.END
+
 # تابع برای مدیریت درخواست‌های Webhook
 async def webhook_handler(request):
     update = await request.json()
@@ -459,7 +630,10 @@ def main() -> None:
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start", start),
+            CommandHandler("edit", edit_start)  # دستور جدید برای ویرایش
+        ],
         states={
             TITLE: [MessageHandler(filters.Text() & ~filters.Command(), get_title)],
             DESCRIPTION: [MessageHandler(filters.Text() & ~filters.Command(), get_description)],
@@ -489,7 +663,14 @@ def main() -> None:
             CONFIRM: [
                 CommandHandler("confirm", confirm),
                 CommandHandler("cancel", cancel)
-            ]
+            ],
+            # مراحل جدید برای ویرایش
+            EDIT_SKU: [MessageHandler(filters.Text() & ~filters.Command(), edit_sku)],
+            EDIT_CHOICE: [CallbackQueryHandler(edit_choice, pattern='^edit_')],
+            EDIT_PRICE: [MessageHandler(filters.Text() & ~filters.Command(), edit_price)],
+            EDIT_STOCK_MODE: [CallbackQueryHandler(edit_stock_mode, pattern='^stock_')],
+            EDIT_STOCK_UNIFORM: [MessageHandler(filters.Text() & ~filters.Command(), edit_stock_uniform)],
+            EDIT_STOCK_ARRAY: [MessageHandler(filters.Text() & ~filters.Command(), edit_stock_array)]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False
@@ -507,7 +688,6 @@ def main() -> None:
     async def on_startup(_):
         await app.initialize()
         await app.start()
-        # تنظیم دستی Webhook
         webhook_set = await app.bot.set_webhook(url=WEBHOOK_URL)
         if webhook_set:
             logger.info("Webhook به درستی تنظیم شد")
