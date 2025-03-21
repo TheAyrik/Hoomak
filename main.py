@@ -13,6 +13,7 @@ from telegram.ext import (
 import telegram.ext.filters as filters
 from dotenv import load_dotenv
 import logging
+from aiohttp import web
 
 # تنظیم لاگ
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -26,6 +27,11 @@ WP_CONSUMER_KEY = os.getenv("WP_CONSUMER_KEY")
 WP_CONSUMER_SECRET = os.getenv("WP_CONSUMER_SECRET")
 WP_USERNAME = os.getenv("WP_USERNAME")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
+PORT = int(os.getenv("PORT", 8443))
+WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'hoomak.onrender.com')}/webhook"
+
+if not TELEGRAM_TOKEN:
+    raise ValueError("TELEGRAM_TOKEN در فایل .env تنظیم نشده است!")
 
 # مراحل ConversationHandler
 (
@@ -102,7 +108,7 @@ def create_woocommerce_json(user_data):
         "type": "variable",
         "description": user_data.get("description"),
         "sku": user_data.get("sku"),
-        "slug": user_data.get("sku").lower(),  # تنظیم slug برابر با sku
+        "slug": user_data.get("sku").lower(),
         "regular_price": str(user_data.get("price")),
         "attributes": attributes,
         "variations": variations,
@@ -111,16 +117,13 @@ def create_woocommerce_json(user_data):
         "images": images,
         "categories": [{"id": 131}]
     }
-
     return product_json
 
 # تابع برای ارسال محصول به ووکامرس
 def create_product_in_woocommerce(product_json):
     url = f"{WP_URL}/wp-json/wc/v3/products"
     auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
-    
     variations = product_json.pop("variations", [])
-    
     response = requests.post(url, auth=auth, json=product_json)
     if response.status_code == 201:
         product_id = response.json().get("id")
@@ -297,7 +300,7 @@ async def get_sole_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     reply_markup = InlineKeyboardMarkup(keyboard)
     message = await update.message.reply_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):", reply_markup=reply_markup)
     user_data[user_id]["usage"] = []
-    user_data[user_id]["usage_message_id"] = message.message_id
+    user_data[user_data[user_id]["usage_message_id"] = message.message_id
     return USAGE
 
 # مدیریت کاربرد
@@ -399,7 +402,6 @@ async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     summary += f"تگ‌ها: {user_data[user_id]['tags'] if user_data[user_id]['tags'] else 'ندارد'}\n"
     summary += f"برند: {user_data[user_id]['brand']}\n"
     summary += "\nبرای ارسال به ووکامرس، /confirm رو بنویس یا /cancel برای لغو:"
-
     await update.message.reply_text(summary)
     return CONFIRM
 
@@ -428,9 +430,20 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error(f"Update {update} caused error {context.error}")
     await update.message.reply_text("یه خطا پیش اومد! لطفاً دوباره امتحان کن.")
 
+# تابع برای مدیریت درخواست‌های Webhook
+async def webhook_handler(request):
+    update = await request.json()
+    await app.update_queue.put(Update.de_json(update, app.bot))
+    return web.Response(text="OK")
+
+# تابع برای endpoint پینگ
+async def ping_handler(request):
+    return web.Response(text="OK")
+
 # تابع اصلی
 def main() -> None:
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    global app
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -469,16 +482,24 @@ def main() -> None:
         per_message=False
     )
 
-    application.add_handler(conv_handler)
-    application.add_error_handler(error_handler)
+    app.add_handler(conv_handler)
+    app.add_error_handler(error_handler)
 
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook"
-    application.run_webhook(
+    # تنظیم سرور aiohttp برای Webhook و پینگ
+    aiohttp_app = web.Application()
+    aiohttp_app.router.add_post('/webhook', webhook_handler)
+    aiohttp_app.router.add_get('/ping', ping_handler)
+
+    # تنظیم Webhook برای تلگرام
+    app.run_webhook(
         listen="0.0.0.0",
-        port=int(os.getenv("PORT", 8443)),
+        port=PORT,
         url_path="/webhook",
-        webhook_url=webhook_url
+        webhook_url=WEBHOOK_URL
     )
+
+    # اجرای سرور aiohttp
+    web.run_app(aiohttp_app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
     main()
