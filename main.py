@@ -29,6 +29,7 @@ WP_USERNAME = os.getenv("WP_USERNAME")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
 PORT = int(os.getenv("PORT", 8443))
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'hoomak.onrender.com')}/webhook"
+ALLOWED_USERS = os.getenv("ALLOWED_USERS", "").split(",")
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN در فایل .env تنظیم نشده است!")
@@ -135,7 +136,13 @@ def create_product_in_woocommerce(product_json):
 
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    if not ALLOWED_USERS or user_id not in ALLOWED_USERS:
+        await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
+        logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
+        return ConversationHandler.END
     await update.message.reply_text("سلام! بیایم یه محصول جدید بسازیم.\nعنوان محصول رو بنویس:")
+    logger.info(f"کاربر مجاز وارد شد: {user_id}")
     return TITLE
 
 # گرفتن عنوان
