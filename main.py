@@ -28,11 +28,15 @@ WP_CONSUMER_SECRET = os.getenv("WP_CONSUMER_SECRET")
 WP_USERNAME = os.getenv("WP_USERNAME")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
 PORT = int(os.getenv("PORT", 8443))
-WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'hoomak.onrender.com')}/webhook"
+RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+WEBHOOK_URL = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook" if RENDER_EXTERNAL_HOSTNAME else None
 ALLOWED_USERS = os.getenv("ALLOWED_USERS", "").split(",")
 
+# چک کردن متغیرهای ضروری
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN در فایل .env تنظیم نشده است!")
+if not RENDER_EXTERNAL_HOSTNAME:
+    raise ValueError("RENDER_EXTERNAL_HOSTNAME در فایل .env تنظیم نشده است!")
 
 # مراحل ConversationHandler
 (
