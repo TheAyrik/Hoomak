@@ -300,7 +300,7 @@ async def get_sole_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     reply_markup = InlineKeyboardMarkup(keyboard)
     message = await update.message.reply_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):", reply_markup=reply_markup)
     user_data[user_id]["usage"] = []
-    user_data[user_data[user_id]["usage_message_id"] = message.message_id
+    user_data[user_id]["usage_message_id"] = message.message_id
     return USAGE
 
 # مدیریت کاربرد
