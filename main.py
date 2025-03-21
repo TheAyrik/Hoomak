@@ -490,15 +490,20 @@ def main() -> None:
     aiohttp_app.router.add_post('/webhook', webhook_handler)
     aiohttp_app.router.add_get('/ping', ping_handler)
 
-    # تنظیم Webhook برای تلگرام
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="/webhook",
-        webhook_url=WEBHOOK_URL
-    )
+    # اضافه کردن Webhook به اپلیکیشن تلگرام
+    async def on_startup():
+        await app.initialize()
+        await app.start()
+        await app.updater.start_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="/webhook",
+            webhook_url=WEBHOOK_URL
+        )
+        logger.info("Webhook started successfully")
 
     # اجرای سرور aiohttp
+    aiohttp_app.on_startup.append(lambda _: on_startup())
     web.run_app(aiohttp_app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
