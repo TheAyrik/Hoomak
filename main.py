@@ -245,19 +245,21 @@ async def get_gallery_images(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # گرفتن سایزها
 async def get_sizes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_data[update.message.from_user.id]["sizes"] = update.message.text
+    user_id = str(update.message.from_user.id)
+    user_data[user_id]["sizes"] = update.message.text
     colors = get_attribute_terms(1)
     keyboard = [[InlineKeyboardButton(color["name"], callback_data=f"color_{color['name']}")] for color in colors]
     keyboard.append([InlineKeyboardButton("اضافه کردن رنگ جدید", callback_data="color_new")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("رنگ محصول رو انتخاب کن:", reply_markup=reply_markup)
+    message = await update.message.reply_text("رنگ محصول رو انتخاب کن:", reply_markup=reply_markup)
+    user_data[user_id]["color_message_id"] = message.message_id  # ذخیره ID پیام
     return COLOR
 
 # مدیریت انتخاب رنگ
 async def get_color(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
+    user_id = str(query.from_user.id)
     data = query.data
 
     if data == "color_new":
@@ -270,7 +272,8 @@ async def get_color(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard = [[InlineKeyboardButton(upper["name"], callback_data=f"upper_{upper['name']}")] for upper in uppers]
         keyboard.append([InlineKeyboardButton("اضافه کردن جنس رویه جدید", callback_data="upper_new")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("جنس رویه رو انتخاب کن:", reply_markup=reply_markup)
+        await query.message.edit_text("جنس رویه رو انتخاب کن:", reply_markup=reply_markup)
+        user_data[user_id]["upper_message_id"] = query.message.message_id  # ذخیره ID پیام
         return UPPER
 
 # گرفتن رنگ جدید
@@ -293,7 +296,7 @@ async def get_color_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def get_upper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
+    user_id = str(query.from_user.id)
     data = query.data
 
     if data == "upper_new":
@@ -306,7 +309,8 @@ async def get_upper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard = [[InlineKeyboardButton(sole["name"], callback_data=f"sole_{sole['name']}")] for sole in soles]
         keyboard.append([InlineKeyboardButton("اضافه کردن جنس زیره جدید", callback_data="sole_new")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("جنس زیره رو انتخاب کن:", reply_markup=reply_markup)
+        await query.message.edit_text("جنس زیره رو انتخاب کن:", reply_markup=reply_markup)
+        user_data[user_id]["sole_message_id"] = query.message.message_id  # ذخیره ID پیام
         return SOLE
 
 # گرفتن جنس رویه جدید
@@ -329,7 +333,7 @@ async def get_upper_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def get_sole(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
+    user_id = str(query.from_user.id)
     data = query.data
 
     if data == "sole_new":
@@ -343,9 +347,9 @@ async def get_sole(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard.append([InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")])
         keyboard.append([InlineKeyboardButton("هیچ‌کدام", callback_data="usage_none")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        message = await query.message.reply_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):", reply_markup=reply_markup)
+        await query.message.edit_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):", reply_markup=reply_markup)
+        user_data[user_id]["usage_message_id"] = query.message.message_id  # به‌روزرسانی ID پیام
         user_data[user_id]["usage"] = []
-        user_data[user_id]["usage_message_id"] = message.message_id
         return USAGE
 
 # گرفتن جنس زیره جدید
@@ -527,13 +531,12 @@ async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # گرفتن SKU برای ویرایش
 async def edit_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = str(update.message.from_user.id)  # مطمئن می‌شیم user_id به‌صورت str باشه
+    user_id = str(update.message.from_user.id)
     sku = update.message.text
     product = find_product_by_sku(sku)
     if not product:
         await update.message.reply_text("محصول با این SKU پیدا نشد. لطفاً دوباره امتحان کنید یا /cancel را بزنید.")
         return EDIT_SKU
-    # چک کردن و ایجاد دیکشنری اگه وجود نداشته باشه
     if user_id not in user_data:
         user_data[user_id] = {}
     user_data[user_id]["edit_product"] = product
@@ -542,13 +545,15 @@ async def edit_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         [InlineKeyboardButton("ویرایش موجودی", callback_data="edit_stock")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("چه چیزی را می‌خواهید ویرایش کنید؟", reply_markup=reply_markup)
+    message = await update.message.reply_text("چه چیزی را می‌خواهید ویرایش کنید؟", reply_markup=reply_markup)
+    user_data[user_id]["edit_message_id"] = message.message_id  # ذخیره ID پیام
     return EDIT_CHOICE
 
 # انتخاب نوع ویرایش
 async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
+    user_id = str(query.from_user.id)
     data = query.data
     if data == "edit_price":
         await query.message.reply_text("قیمت جدید را وارد کنید (مثلاً 600000):")
@@ -559,7 +564,7 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             [InlineKeyboardButton("تغییر جداگانه برای هر متغیر", callback_data="stock_array")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("چگونه می‌خواهید موجودی را تغییر دهید؟", reply_markup=reply_markup)
+        await query.message.edit_text("چگونه می‌خواهید موجودی را تغییر دهید؟", reply_markup=reply_markup)
         return EDIT_STOCK_MODE
 
 # ویرایش قیمت
