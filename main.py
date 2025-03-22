@@ -131,7 +131,6 @@ def create_product_in_woocommerce(product_json):
     url = f"{WP_URL}/wp-json/wc/v3/products"
     auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
     variations = product_json.pop("variations", [])
-    # غیرفعال کردن مدیریت موجودی برای محصول کلی
     product_json["manage_stock"] = False
     response = requests.post(url, auth=auth, json=product_json)
     if response.status_code == 201:
@@ -139,10 +138,9 @@ def create_product_in_woocommerce(product_json):
         for variation in variations:
             variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
             requests.post(variation_url, auth=auth, json=variation)
-        # غیرفعال کردن manage_stock و آپدیت وضعیت محصول
         update_product_in_woocommerce(product_id, {
             "manage_stock": False,
-            "stock_status": "instock"  # چون موقع ایجاد محصول، موجودی 10 تنظیم شده
+            "stock_status": "instock"
         })
         return product_id
     error_message = response.json().get("message", "خطایی رخ داد")
@@ -150,6 +148,7 @@ def create_product_in_woocommerce(product_json):
     if "SKU" in error_message and "already" in error_message:
         raise Exception("این SKU قبلاً برای یه محصول دیگه استفاده شده. لطفاً یه SKU دیگه انتخاب کن.")
     raise Exception("مشکلی در ثبت محصول پیش اومد. لطفاً دوباره امتحان کن یا با مدیر تماس بگیر.")
+
 # تابع برای به‌روزرسانی محصول در ووکامرس
 def update_product_in_woocommerce(product_id, data):
     url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}"
@@ -160,6 +159,26 @@ def update_product_in_woocommerce(product_id, data):
     logger.error(f"خطا در به‌روزرسانی محصول: {response.status_code} - {response.text}")
     raise Exception("مشکلی در به‌روزرسانی محصول پیش اومد. لطفاً دوباره امتحان کنید.")
 
+# تابع برای پیدا کردن محصول با SKU
+def find_product_by_sku(sku):
+    url = f"{WP_URL}/wp-json/wc/v3/products?sku={sku}"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    response = requests.get(url, auth=auth)
+    if response.status_code == 200 and response.json():
+        return response.json()[0]  # اولین محصول با این SKU
+    logger.error(f"محصول با SKU {sku} پیدا نشد: {response.status_code} - {response.text}")
+    return None
+
+# تابع برای گرفتن متغیرهای محصول
+def get_variations(product_id):
+    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    response = requests.get(url, auth=auth)
+    if response.status_code == 200:
+        return response.json()
+    logger.error(f"خطا در گرفتن متغیرها: {response.status_code} - {response.text}")
+    return []
+
 # تابع برای به‌روزرسانی موجودی متغیرها
 def update_variations_stock(product_id, stock_data):
     url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
@@ -169,13 +188,11 @@ def update_variations_stock(product_id, stock_data):
         logger.error(f"خطا در گرفتن متغیرها: {variations_response.status_code} - {variations_response.text}")
         raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
 
-    # غیرفعال کردن مدیریت موجودی برای محصول کلی
     update_product_in_woocommerce(product_id, {"manage_stock": False})
-
     variations = variations_response.json()
     has_stock = False
 
-    if isinstance(stock_data, int):  # حالت یکنواخت
+    if isinstance(stock_data, int):
         for variation in variations:
             variation_id = variation['id']
             variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
@@ -185,7 +202,7 @@ def update_variations_stock(product_id, stock_data):
                 "stock_status": "instock" if stock_data > 0 else "outofstock"
             })
         has_stock = stock_data > 0
-    else:  # حالت آرایه
+    else:
         for i, variation in enumerate(variations):
             variation_id = variation['id']
             stock = stock_data[i] if i < len(stock_data) else 0
@@ -198,19 +215,10 @@ def update_variations_stock(product_id, stock_data):
             if stock > 0:
                 has_stock = True
 
-    # چک کردن موجودی متغیرها برای اطمینان
-    updated_variations = get_variations(product_id)
-    has_stock_after_update = False
-    for variation in updated_variations:
-        if variation.get("stock_quantity", 0) > 0:
-            has_stock_after_update = True
-            break
-
-    # آپدیت نهایی وضعیت محصول
     update_product_in_woocommerce(product_id, {
-        "manage_stock": False,
-        "stock_status": "instock" if has_stock_after_update else "outofstock"
+        "stock_status": "instock" if has_stock else "outofstock"
     })
+
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
@@ -218,7 +226,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
         logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
         return ConversationHandler.END
-    user_data[user_id] = {}  # ایجاد دیکشنری برای کاربر
+    user_data[user_id] = {}
     await update.message.reply_text("سلام! بیایم یه محصول جدید بسازیم.\nعنوان محصول رو بنویس:")
     logger.info(f"کاربر مجاز وارد شد: {user_id}")
     return TITLE
@@ -308,12 +316,12 @@ async def get_color(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard.append([InlineKeyboardButton("اضافه کردن جنس رویه جدید", callback_data="upper_new")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.edit_text("جنس رویه رو انتخاب کن:", reply_markup=reply_markup)
-        user_data[user_id]["upper_message_id"] = query.message.message_id  # ذخیره ID پیام
+        user_data[user_id]["upper_message_id"] = query.message.message_id
         return UPPER
 
 # گرفتن رنگ جدید
 async def get_color_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
     color = update.message.text
     new_color = add_attribute_term(1, color)
     if new_color:
@@ -345,12 +353,12 @@ async def get_upper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard.append([InlineKeyboardButton("اضافه کردن جنس زیره جدید", callback_data="sole_new")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.edit_text("جنس زیره رو انتخاب کن:", reply_markup=reply_markup)
-        user_data[user_id]["sole_message_id"] = query.message.message_id  # ذخیره ID پیام
+        user_data[user_id]["sole_message_id"] = query.message.message_id
         return SOLE
 
 # گرفتن جنس رویه جدید
 async def get_upper_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
     upper = update.message.text
     new_upper = add_attribute_term(4, upper)
     if new_upper:
@@ -383,13 +391,13 @@ async def get_sole(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard.append([InlineKeyboardButton("هیچ‌کدام", callback_data="usage_none")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.edit_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):", reply_markup=reply_markup)
-        user_data[user_id]["usage_message_id"] = query.message.message_id  # به‌روزرسانی ID پیام
+        user_data[user_id]["usage_message_id"] = query.message.message_id
         user_data[user_id]["usage"] = []
         return USAGE
 
 # گرفتن جنس زیره جدید
 async def get_sole_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
     sole = update.message.text
     new_sole = add_attribute_term(5, sole)
     if new_sole:
@@ -426,13 +434,11 @@ async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return SKU
     else:
         usage = data.replace("usage_", "")
-        # اگه کاربرد قبلاً انتخاب شده، حذفش کن
         if usage in user_data[user_id]["usage"]:
             user_data[user_id]["usage"].remove(usage)
         else:
             user_data[user_id]["usage"].append(usage)
 
-        # بازسازی دکمه‌ها
         usages = get_attribute_terms(6)
         keyboard = []
         for usage_item in usages:
@@ -443,7 +449,6 @@ async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         keyboard.append([InlineKeyboardButton("اتمام انتخاب کاربرد", callback_data="usage_done")])
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # فقط اگه پیام یا دکمه‌ها تغییر کرده باشند، پیام رو ادیت کن
         current_text = query.message.text
         if (current_text != "کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):" or
                 query.message.reply_markup != reply_markup):
@@ -489,7 +494,6 @@ async def get_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if user_id not in user_data:
         user_data[user_id] = {}
     sku = update.message.text
-    # چک کردن اینکه آیا SKU قبلاً وجود داره یا نه
     existing_product = find_product_by_sku(sku)
     if existing_product:
         await update.message.reply_text("این SKU قبلاً برای یه محصول دیگه استفاده شده. لطفاً یه SKU دیگه وارد کن.")
@@ -546,22 +550,15 @@ async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(summary)
     return CONFIRM
 
-def get_variations(product_id):
-    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
-    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
-    response = requests.get(url, auth=auth)
-    if response.status_code == 200:
-        return response.json()
-    logger.error(f"خطا در گرفتن متغیرها: {response.status_code} - {response.text}")
-    return []
-
 # تأیید و ارسال به ووکامرس
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        await update.message.reply_text("داده‌های کاربر پیدا نشد. لطفاً دوباره شروع کنید با /start")
+        return ConversationHandler.END
     product_json = user_data[user_id]["json"]
     try:
         product_id = create_product_in_woocommerce(product_json)
-        # پاکسازی پیام‌های قبلی
         for key in ["color_message_id", "upper_message_id", "sole_message_id", "usage_message_id"]:
             if key in user_data[user_id]:
                 try:
@@ -573,7 +570,6 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     logger.warning(f"خطا در پاکسازی پیام {key}: {str(e)}")
         await update.message.reply_text(f"محصول با موفقیت ساخته شد! ID: {product_id}")
     except Exception as e:
-        # پاکسازی پیام‌های قبلی حتی در صورت خطا
         for key in ["color_message_id", "upper_message_id", "sole_message_id", "usage_message_id"]:
             if key in user_data[user_id]:
                 try:
@@ -590,8 +586,9 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # لغو
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
-    user_data.pop(user_id, None)
+    user_id = str(update.message.from_user.id)
+    if user_id in user_data:
+        user_data.pop(user_id, None)
     await update.message.reply_text("عملیات لغو شد. برای شروع دوباره /start رو بنویس.")
     return ConversationHandler.END
 
@@ -603,48 +600,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     else:
         logger.warning("پیام برای ارسال پاسخ خطا موجود نیست.")
 
-def update_variations_stock(product_id, stock_data):
-    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
-    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
-    variations_response = requests.get(url, auth=auth)
-    if variations_response.status_code != 200:
-        logger.error(f"خطا در گرفتن متغیرها: {variations_response.status_code} - {variations_response.text}")
-        raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
-
-    # غیرفعال کردن مدیریت موجودی برای محصول کلی (درخواست جداگانه)
-    update_product_in_woocommerce(product_id, {"manage_stock": False})
-
-    variations = variations_response.json()
-    has_stock = False  # برای چک کردن اینکه آیا حداقل یکی از متغیرها موجوده
-
-    if isinstance(stock_data, int):  # حالت یکنواخت
-        for variation in variations:
-            variation_id = variation['id']
-            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
-            requests.put(variation_url, auth=auth, json={
-                "manage_stock": True,
-                "stock_quantity": stock_data,
-                "stock_status": "instock" if stock_data > 0 else "outofstock"
-            })
-        has_stock = stock_data > 0
-    else:  # حالت آرایه
-        for i, variation in enumerate(variations):
-            variation_id = variation['id']
-            stock = stock_data[i] if i < len(stock_data) else 0
-            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
-            requests.put(variation_url, auth=auth, json={
-                "manage_stock": True,
-                "stock_quantity": stock,
-                "stock_status": "instock" if stock > 0 else "outofstock"
-            })
-            if stock > 0:
-                has_stock = True
-
-    # آپدیت وضعیت کلی محصول (درخواست جداگانه)
-    update_product_in_woocommerce(product_id, {
-        "stock_status": "instock" if has_stock else "outofstock"
-    })
-
 # تابع برای شروع ویرایش محصول
 async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
@@ -652,20 +607,20 @@ async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
         logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
         return ConversationHandler.END
-    user_data[user_id] = {}  # ایجاد دیکشنری برای کاربر
+    user_data[user_id] = {}
     await update.message.reply_text("لطفاً SKU محصولی که می‌خواهید ویرایش کنید را وارد کنید (مثلاً NK-J23-WB-M):")
     return EDIT_SKU
 
 # گرفتن SKU برای ویرایش
 async def edit_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
     sku = update.message.text
     product = find_product_by_sku(sku)
     if not product:
         await update.message.reply_text("محصول با این SKU پیدا نشد. لطفاً دوباره امتحان کنید یا /cancel را بزنید.")
         return EDIT_SKU
-    if user_id not in user_data:
-        user_data[user_id] = {}
     user_data[user_id]["edit_product"] = product
     keyboard = [
         [InlineKeyboardButton("ویرایش قیمت", callback_data="edit_price")],
@@ -673,7 +628,7 @@ async def edit_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message = await update.message.reply_text("چه چیزی را می‌خواهید ویرایش کنید؟", reply_markup=reply_markup)
-    user_data[user_id]["edit_message_id"] = message.message_id  # ذخیره ID پیام
+    user_data[user_id]["edit_message_id"] = message.message_id
     return EDIT_CHOICE
 
 # انتخاب نوع ویرایش
@@ -699,14 +654,16 @@ async def edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
     new_price = update.message.text
     try:
-        new_price = int(new_price)  # مطمئن می‌شیم که عدد معتبره
+        new_price = int(new_price)
         product = user_data[user_id]["edit_product"]
         product_id = product["id"]
-        # آپدیت قیمت محصول اصلی
         update_product_in_woocommerce(product_id, {"regular_price": str(new_price)})
-        # آپدیت قیمت متغیرها
-        update_variations_price(product_id, new_price)
-        # پاکسازی پیام قبلی
+        variations = get_variations(product_id)
+        auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+        for variation in variations:
+            variation_id = variation['id']
+            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+            requests.put(variation_url, auth=auth, json={"regular_price": str(new_price)})
         if "edit_message_id" in user_data[user_id]:
             await context.bot.delete_message(
                 chat_id=update.message.chat_id,
@@ -731,9 +688,9 @@ async def edit_stock_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text("موجودی جدید را وارد کنید (مثلاً 10 یا 0 برای ناموجود کردن):")
         return EDIT_STOCK_UNIFORM
     elif data == "stock_array":
-        user_id = str(query.from_user.id)  # اصلاح user_id
+        user_id = str(query.from_user.id)
         product = user_data[user_id]["edit_product"]
-        variations = product.get("variations", [])
+        variations = get_variations(product["id"])
         await query.message.reply_text(
             f"برای هر متغیر یک عدد وارد کنید (به ترتیب سایزها، با کاما جدا کنید، مثلاً 1,2,3,0 برای {len(variations)} متغیر):"
         )
@@ -747,9 +704,7 @@ async def edit_stock_uniform(update: Update, context: ContextTypes.DEFAULT_TYPE)
         stock = int(stock)
         product = user_data[user_id]["edit_product"]
         product_id = product["id"]
-        update_product_in_woocommerce(product_id, {"manage_stock": True})
         update_variations_stock(product_id, stock)
-        # پاکسازی پیام قبلی
         if "edit_message_id" in user_data[user_id]:
             await context.bot.delete_message(
                 chat_id=update.message.chat_id,
@@ -773,9 +728,7 @@ async def edit_stock_array(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         stock_data = [int(x.strip()) for x in stock_input.split(",")]
         product = user_data[user_id]["edit_product"]
         product_id = product["id"]
-        update_product_in_woocommerce(product_id, {"manage_stock": True})
         update_variations_stock(product_id, stock_data)
-        # پاکسازی پیام قبلی
         if "edit_message_id" in user_data[user_id]:
             await context.bot.delete_message(
                 chat_id=update.message.chat_id,
@@ -808,7 +761,7 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
-            CommandHandler("edit", edit_start)  # دستور جدید برای ویرایش
+            CommandHandler("edit", edit_start)
         ],
         states={
             TITLE: [MessageHandler(filters.Text() & ~filters.Command(), get_title)],
@@ -840,7 +793,6 @@ def main() -> None:
                 CommandHandler("confirm", confirm),
                 CommandHandler("cancel", cancel)
             ],
-            # مراحل جدید برای ویرایش
             EDIT_SKU: [MessageHandler(filters.Text() & ~filters.Command(), edit_sku)],
             EDIT_CHOICE: [CallbackQueryHandler(edit_choice, pattern='^edit_')],
             EDIT_PRICE: [MessageHandler(filters.Text() & ~filters.Command(), edit_price)],
@@ -855,12 +807,10 @@ def main() -> None:
     app.add_handler(conv_handler)
     app.add_error_handler(error_handler)
 
-    # تنظیم سرور aiohttp
     aiohttp_app = web.Application()
     aiohttp_app.router.add_post('/webhook', webhook_handler)
     aiohttp_app.router.add_get('/ping', ping_handler)
 
-    # تابع startup برای تنظیم Webhook
     async def on_startup(_):
         await app.initialize()
         await app.start()
@@ -871,17 +821,14 @@ def main() -> None:
             logger.error("خطا در تنظیم Webhook")
         logger.info("اپلیکیشن شروع شد")
 
-    # تابع shutdown برای تمیز کردن
     async def on_shutdown(_):
         await app.stop()
         await app.shutdown()
         logger.info("اپلیکیشن متوقف شد")
 
-    # اضافه کردن startup و shutdown
     aiohttp_app.on_startup.append(on_startup)
     aiohttp_app.on_shutdown.append(on_shutdown)
 
-    # اجرای سرور
     web.run_app(aiohttp_app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
