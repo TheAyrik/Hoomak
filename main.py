@@ -400,7 +400,11 @@ async def get_sole_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
+    user_id = str(query.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    if "usage" not in user_data[user_id]:
+        user_data[user_id]["usage"] = []
     data = query.data
 
     if data == "usage_new":
@@ -428,7 +432,11 @@ async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # گرفتن کاربرد جدید
 async def get_usage_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    if "usage" not in user_data[user_id]:
+        user_data[user_id]["usage"] = []
     usage = update.message.text
     new_usage = add_attribute_term(6, usage)
     if new_usage:
