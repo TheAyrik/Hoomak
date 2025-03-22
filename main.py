@@ -100,10 +100,11 @@ def create_woocommerce_json(user_data):
         {"id": 6, "options": usage_list, "variation": False, "visible": True}  # کاربرد
     ]
 
+    # استفاده از آیدی ویژگی جهانی برای تنوع‌ها
     variations = [
         {
             "regular_price": str(user_data.get("price")),
-            "attributes": [{"name": "سایز", "option": size}],
+            "attributes": [{"id": 3, "option": size}],  # استفاده از id به جای name
             "manage_stock": True,
             "stock_quantity": 10,
             "stock_status": "instock"
@@ -191,10 +192,10 @@ def update_variations_stock(product_id, stock_data):
 
     variations = variations_response.json()
 
-    # گرفتن سایز هر متغیر
+    # گرفتن سایز هر متغیر با استفاده از id ویژگی
     for variation in variations:
         for attribute in variation['attributes']:
-            if attribute['name'] == 'سایز':
+            if attribute.get('id') == 3:  # آیدی ویژگی "سایز"
                 variation['size'] = attribute['option']
                 break
 
