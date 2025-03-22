@@ -138,8 +138,11 @@ def create_product_in_woocommerce(product_json):
             variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
             requests.post(variation_url, auth=auth, json=variation)
         return product_id
+    error_message = response.json().get("message", "خطایی رخ داد")
     logger.error(f"خطا در ارسال محصول به ووکامرس: {response.status_code} - {response.text}")
-    raise Exception("مشکلی در ثبت محصول پیش اومد. لطفاً دوباره امتحان کنید یا با مدیر تماس بگیرید.")
+    if "SKU" in error_message and "already" in error_message:
+        raise Exception("این SKU قبلاً برای یه محصول دیگه استفاده شده. لطفاً یه SKU دیگه انتخاب کن.")
+    raise Exception("مشکلی در ثبت محصول پیش اومد. لطفاً دوباره امتحان کن یا با مدیر تماس بگیر.")
 
 # تابع برای پیدا کردن محصول با SKU
 def find_product_by_sku(sku):
@@ -478,7 +481,13 @@ async def get_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
     if user_id not in user_data:
         user_data[user_id] = {}
-    user_data[user_id]["sku"] = update.message.text
+    sku = update.message.text
+    # چک کردن اینکه آیا SKU قبلاً وجود داره یا نه
+    existing_product = find_product_by_sku(sku)
+    if existing_product:
+        await update.message.reply_text("این SKU قبلاً برای یه محصول دیگه استفاده شده. لطفاً یه SKU دیگه وارد کن.")
+        return SKU
+    user_data[user_id]["sku"] = sku
     await update.message.reply_text("قیمت محصول رو بنویس (مثلاً 565000):")
     return PRICE
 
@@ -548,6 +557,16 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     logger.warning(f"خطا در پاکسازی پیام {key}: {str(e)}")
         await update.message.reply_text(f"محصول با موفقیت ساخته شد! ID: {product_id}")
     except Exception as e:
+        # پاکسازی پیام‌های قبلی حتی در صورت خطا
+        for key in ["color_message_id", "upper_message_id", "sole_message_id", "usage_message_id"]:
+            if key in user_data[user_id]:
+                try:
+                    await context.bot.delete_message(
+                        chat_id=update.message.chat_id,
+                        message_id=user_data[user_id][key]
+                    )
+                except Exception as e:
+                    logger.warning(f"خطا در پاکسازی پیام {key}: {str(e)}")
         await update.message.reply_text(f"خطا در ساخت محصول: {str(e)}")
     finally:
         user_data.pop(user_id, None)
