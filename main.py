@@ -171,6 +171,8 @@ def update_variations_stock(product_id, stock_data):
         raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
 
     variations = variations_response.json()
+    has_stock = False  # برای چک کردن اینکه آیا حداقل یکی از متغیرها موجوده
+
     if isinstance(stock_data, int):  # حالت یکنواخت
         for variation in variations:
             variation_id = variation['id']
@@ -180,6 +182,7 @@ def update_variations_stock(product_id, stock_data):
                 "stock_quantity": stock_data,
                 "stock_status": "instock" if stock_data > 0 else "outofstock"
             })
+        has_stock = stock_data > 0
     else:  # حالت آرایه
         for i, variation in enumerate(variations):
             variation_id = variation['id']
@@ -190,6 +193,13 @@ def update_variations_stock(product_id, stock_data):
                 "stock_quantity": stock,
                 "stock_status": "instock" if stock > 0 else "outofstock"
             })
+            if stock > 0:
+                has_stock = True
+
+    # آپدیت وضعیت کلی محصول
+    update_product_in_woocommerce(product_id, {
+        "stock_status": "instock" if has_stock else "outofstock"
+    })
 
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
