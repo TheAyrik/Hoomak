@@ -91,12 +91,13 @@ def create_woocommerce_json(user_data):
     if not usage_list:
         usage_list = []
 
+    # استفاده از آیدی‌های ویژگی‌های جهانی (Global Attributes)
     attributes = [
-        {"name": "سایز", "options": sizes_list, "variation": True, "visible": True},
-        {"name": "رنگ", "options": [user_data.get("color")], "variation": False, "visible": True},
-        {"name": "جنس رویه", "options": [user_data.get("upper")], "variation": False, "visible": True},
-        {"name": "جنس زیره", "options": [user_data.get("sole")], "variation": False, "visible": True},
-        {"name": "کاربرد", "options": usage_list, "variation": False, "visible": True}
+        {"id": 3, "options": sizes_list, "variation": True, "visible": True},  # سایز
+        {"id": 1, "options": [user_data.get("color")], "variation": False, "visible": True},  # رنگ
+        {"id": 4, "options": [user_data.get("upper")], "variation": False, "visible": True},  # جنس رویه
+        {"id": 5, "options": [user_data.get("sole")], "variation": False, "visible": True},  # جنس زیره
+        {"id": 6, "options": usage_list, "variation": False, "visible": True}  # کاربرد
     ]
 
     variations = [
@@ -639,6 +640,17 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     else:
         logger.warning("پیام برای ارسال پاسخ خطا موجود نیست.")
 
+# دستور نمایش لیست دستورات
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    help_text = (
+        "دستورات بات:\n"
+        "/start - شروع ساخت محصول جدید\n"
+        "/edit - ویرایش محصول موجود\n"
+        "/link_products - لینک کردن محصولات مشابه\n"
+        "/help - نمایش این پیام"
+    )
+    await update.message.reply_text(help_text)
+
 # تابع برای شروع ویرایش محصول
 async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
@@ -841,7 +853,8 @@ def main() -> None:
         entry_points=[
             CommandHandler("start", start),
             CommandHandler("edit", edit_start),
-            CommandHandler("link_products", link_products_start)  # دستور جدید
+            CommandHandler("link_products", link_products_start),  # دستور جدید
+            CommandHandler("help", help_command)  # دستور جدید برای نمایش کمک
         ],
         states={
             TITLE: [MessageHandler(filters.Text() & ~filters.Command(), get_title)],
