@@ -224,25 +224,33 @@ async def get_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # گرفتن توضیحات
 async def get_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_data[update.message.from_user.id]["description"] = update.message.text
+    user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    user_data[user_id]["description"] = update.message.text
     await update.message.reply_text("عکس شاخص محصول رو آپلود کن:")
     return MAIN_IMAGE
 
 # گرفتن عکس شاخص
 async def get_main_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
     photo = update.message.photo[-1]
     file = await photo.get_file()
     image_data = await file.download_as_bytearray()
     image_url = upload_image_to_wordpress(image_data, f"main_{photo.file_id}.jpg")
-    user_data[update.message.from_user.id]["main_image"] = image_url
-    user_data[update.message.from_user.id]["gallery_images"] = []
-    user_data[update.message.from_user.id]["gallery_message_sent"] = False
+    user_data[user_id]["main_image"] = image_url
+    user_data[user_id]["gallery_images"] = []
+    user_data[user_id]["gallery_message_sent"] = False
     await update.message.reply_text("عکس‌های گالری محصول رو آپلود کن (برای اتمام، /done رو بنویس):")
     return GALLERY_IMAGES
 
 # گرفتن عکس‌های گالری
 async def get_gallery_images(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
     if update.message.text == "/done":
         await update.message.reply_text("سایزهای محصول رو با کاما جدا کن (مثلاً 41,42,43):")
         return SIZES
@@ -250,6 +258,8 @@ async def get_gallery_images(update: Update, context: ContextTypes.DEFAULT_TYPE)
     file = await photo.get_file()
     image_data = await file.download_as_bytearray()
     image_url = upload_image_to_wordpress(image_data, f"gallery_{photo.file_id}.jpg")
+    if "gallery_images" not in user_data[user_id]:
+        user_data[user_id]["gallery_images"] = []
     user_data[user_id]["gallery_images"].append(image_url)
     if not user_data[user_id].get("gallery_message_sent", False):
         user_data[user_id]["gallery_message_sent"] = True
