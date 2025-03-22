@@ -139,7 +139,7 @@ def create_product_in_woocommerce(product_json):
         for variation in variations:
             variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
             requests.post(variation_url, auth=auth, json=variation)
-        # آپدیت وضعیت محصول بعد از ایجاد
+        # غیرفعال کردن manage_stock و آپدیت وضعیت محصول
         update_product_in_woocommerce(product_id, {
             "manage_stock": False,
             "stock_status": "instock"  # چون موقع ایجاد محصول، موجودی 10 تنظیم شده
@@ -150,17 +150,6 @@ def create_product_in_woocommerce(product_json):
     if "SKU" in error_message and "already" in error_message:
         raise Exception("این SKU قبلاً برای یه محصول دیگه استفاده شده. لطفاً یه SKU دیگه انتخاب کن.")
     raise Exception("مشکلی در ثبت محصول پیش اومد. لطفاً دوباره امتحان کن یا با مدیر تماس بگیر.")
-
-# تابع برای پیدا کردن محصول با SKU
-def find_product_by_sku(sku):
-    url = f"{WP_URL}/wp-json/wc/v3/products?sku={sku}"
-    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
-    response = requests.get(url, auth=auth)
-    if response.status_code == 200 and response.json():
-        return response.json()[0]  # اولین محصول با این SKU
-    logger.error(f"محصول با SKU {sku} پیدا نشد: {response.status_code} - {response.text}")
-    return None
-
 # تابع برای به‌روزرسانی محصول در ووکامرس
 def update_product_in_woocommerce(product_id, data):
     url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}"
@@ -184,7 +173,7 @@ def update_variations_stock(product_id, stock_data):
     update_product_in_woocommerce(product_id, {"manage_stock": False})
 
     variations = variations_response.json()
-    has_stock = False  # برای چک کردن اینکه آیا حداقل یکی از متغیرها موجوده
+    has_stock = False
 
     if isinstance(stock_data, int):  # حالت یکنواخت
         for variation in variations:
@@ -209,17 +198,19 @@ def update_variations_stock(product_id, stock_data):
             if stock > 0:
                 has_stock = True
 
-    # آپدیت وضعیت کلی محصول
-    update_product_in_woocommerce(product_id, {
-        "stock_status": "instock" if has_stock else "outofstock"
-    })
+    # چک کردن موجودی متغیرها برای اطمینان
+    updated_variations = get_variations(product_id)
+    has_stock_after_update = False
+    for variation in updated_variations:
+        if variation.get("stock_quantity", 0) > 0:
+            has_stock_after_update = True
+            break
 
-    # آپدیت وضعیت کلی محصول (دوباره برای اطمینان)
+    # آپدیت نهایی وضعیت محصول
     update_product_in_woocommerce(product_id, {
-        "manage_stock": True,  # مطمئن می‌شیم مدیریت موجودی فعاله
-        "stock_status": "instock" if has_stock else "outofstock"
+        "manage_stock": False,
+        "stock_status": "instock" if has_stock_after_update else "outofstock"
     })
-
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
@@ -555,6 +546,15 @@ async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(summary)
     return CONFIRM
 
+def get_variations(product_id):
+    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    response = requests.get(url, auth=auth)
+    if response.status_code == 200:
+        return response.json()
+    logger.error(f"خطا در گرفتن متغیرها: {response.status_code} - {response.text}")
+    return []
+
 # تأیید و ارسال به ووکامرس
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
@@ -603,7 +603,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     else:
         logger.warning("پیام برای ارسال پاسخ خطا موجود نیست.")
 
-def update_variations_price(product_id, new_price):
+def update_variations_stock(product_id, stock_data):
     url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
     auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
     variations_response = requests.get(url, auth=auth)
@@ -611,16 +611,39 @@ def update_variations_price(product_id, new_price):
         logger.error(f"خطا در گرفتن متغیرها: {variations_response.status_code} - {variations_response.text}")
         raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
 
+    # غیرفعال کردن مدیریت موجودی برای محصول کلی (درخواست جداگانه)
+    update_product_in_woocommerce(product_id, {"manage_stock": False})
+
     variations = variations_response.json()
-    for variation in variations:
-        variation_id = variation['id']
-        variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
-        response = requests.put(variation_url, auth=auth, json={
-            "regular_price": str(new_price)
-        })
-        if response.status_code != 200:
-            logger.error(f"خطا در به‌روزرسانی قیمت متغیر {variation_id}: {response.status_code} - {response.text}")
-            raise Exception("مشکلی در به‌روزرسانی قیمت متغیرها پیش اومد.")
+    has_stock = False  # برای چک کردن اینکه آیا حداقل یکی از متغیرها موجوده
+
+    if isinstance(stock_data, int):  # حالت یکنواخت
+        for variation in variations:
+            variation_id = variation['id']
+            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+            requests.put(variation_url, auth=auth, json={
+                "manage_stock": True,
+                "stock_quantity": stock_data,
+                "stock_status": "instock" if stock_data > 0 else "outofstock"
+            })
+        has_stock = stock_data > 0
+    else:  # حالت آرایه
+        for i, variation in enumerate(variations):
+            variation_id = variation['id']
+            stock = stock_data[i] if i < len(stock_data) else 0
+            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+            requests.put(variation_url, auth=auth, json={
+                "manage_stock": True,
+                "stock_quantity": stock,
+                "stock_status": "instock" if stock > 0 else "outofstock"
+            })
+            if stock > 0:
+                has_stock = True
+
+    # آپدیت وضعیت کلی محصول (درخواست جداگانه)
+    update_product_in_woocommerce(product_id, {
+        "stock_status": "instock" if has_stock else "outofstock"
+    })
 
 # تابع برای شروع ویرایش محصول
 async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
