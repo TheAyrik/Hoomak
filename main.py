@@ -185,28 +185,37 @@ def update_variations_stock(product_id, stock_data):
     auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
     variations_response = requests.get(url, auth=auth)
     if variations_response.status_code != 200:
-        logger.error(f"خطا در گرفتن متغیرها: {variations_response.status_code} - {variations_response.text}")
         raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
 
-    update_product_in_woocommerce(product_id, {"manage_stock": False})
     variations = variations_response.json()
+
+    # گرفتن سایز هر متغیر
+    for variation in variations:
+        for attribute in variation['attributes']:
+            if attribute['name'] == 'سایز':
+                variation['size'] = attribute['option']
+                break
+
+    # مرتب‌سازی متغیرها بر اساس سایز
+    variations.sort(key=lambda x: int(x['size']))
+
     has_stock = False
 
-    if isinstance(stock_data, int):
+    if isinstance(stock_data, int):  # موجودی یکنواخت
         for variation in variations:
             variation_id = variation['id']
-            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+            variation_url = f"{url}/{variation_id}"
             requests.put(variation_url, auth=auth, json={
                 "manage_stock": True,
                 "stock_quantity": stock_data,
                 "stock_status": "instock" if stock_data > 0 else "outofstock"
             })
         has_stock = stock_data > 0
-    else:
+    else:  # موجودی آرایه‌ای
         for i, variation in enumerate(variations):
             variation_id = variation['id']
             stock = stock_data[i] if i < len(stock_data) else 0
-            variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations/{variation_id}"
+            variation_url = f"{url}/{variation_id}"
             requests.put(variation_url, auth=auth, json={
                 "manage_stock": True,
                 "stock_quantity": stock,
@@ -218,7 +227,7 @@ def update_variations_stock(product_id, stock_data):
     update_product_in_woocommerce(product_id, {
         "stock_status": "instock" if has_stock else "outofstock"
     })
-
+    
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
