@@ -42,8 +42,9 @@ if not RENDER_EXTERNAL_HOSTNAME:
 (
     TITLE, DESCRIPTION, MAIN_IMAGE, GALLERY_IMAGES, SIZES, COLOR, UPPER, SOLE, USAGE,
     SKU, PRICE, TAGS, BRAND, CONFIRM,
-    EDIT_SKU, EDIT_CHOICE, EDIT_PRICE, EDIT_STOCK_MODE, EDIT_STOCK_UNIFORM, EDIT_STOCK_ARRAY
-) = range(20)
+    EDIT_SKU, EDIT_CHOICE, EDIT_PRICE, EDIT_STOCK_MODE, EDIT_STOCK_UNIFORM, EDIT_STOCK_ARRAY,
+    LINK_PRODUCTS  # مرحله جدید برای لینک کردن محصولات
+) = range(21)
 
 # دیکشنری برای ذخیره داده‌های کاربر
 user_data = {}
@@ -227,7 +228,36 @@ def update_variations_stock(product_id, stock_data):
     update_product_in_woocommerce(product_id, {
         "stock_status": "instock" if has_stock else "outofstock"
     })
-    
+
+# تابع برای پیدا کردن ID محصول از SKU
+def get_product_id_by_sku(sku):
+    url = f"{WP_URL}/wp-json/wc/v3/products?sku={sku}"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    response = requests.get(url, auth=auth)
+    if response.status_code == 200 and response.json():
+        return response.json()[0]["id"]
+    logger.error(f"محصول با SKU {sku} پیدا نشد: {response.status_code} - {response.text}")
+    return None
+
+# تابع آپدیت Cross-Sells
+def update_cross_sells(product_id, new_cross_sell_ids):
+    # گرفتن اطلاعات فعلی محصول
+    url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}"
+    auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
+    response = requests.get(url, auth=auth)
+    if response.status_code != 200:
+        logger.error(f"خطا در گرفتن اطلاعات محصول {product_id}: {response.status_code} - {response.text}")
+        raise Exception("مشکلی در گرفتن اطلاعات محصول پیش اومد.")
+
+    product = response.json()
+    current_cross_sell_ids = product.get("cross_sell_ids", [])
+
+    # اضافه کردن IDهای جدید، بدون تکرار
+    updated_cross_sell_ids = list(set(current_cross_sell_ids + new_cross_sell_ids))
+
+    # آپدیت محصول
+    update_product_in_woocommerce(product_id, {"cross_sell_ids": updated_cross_sell_ids})
+
 # شروع ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = str(update.message.from_user.id)
@@ -753,6 +783,46 @@ async def edit_stock_array(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         user_data.pop(user_id, None)
     return ConversationHandler.END
 
+# دستور لینک کردن محصولات
+async def link_products_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    if not ALLOWED_USERS or user_id not in ALLOWED_USERS:
+        await update.message.reply_text("شما دسترسی ندارید! با مدیر تماس بگیرید.")
+        logger.info(f"کاربر غیرمجاز سعی کرد وارد شود: {user_id}")
+        return ConversationHandler.END
+    user_data[user_id] = {}
+    await update.message.reply_text("لطفاً SKUهای محصولات مرتبط را با کاما جدا کنید (مثلاً NK-J23-WB-M,NK-J23-B-M):")
+    return LINK_PRODUCTS
+
+async def link_products(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    skus = update.message.text.split(',')
+    product_ids = {}
+    invalid_skus = []
+
+    # بررسی وجود محصولات
+    for sku in skus:
+        sku = sku.strip()  # حذف فاصله‌های اضافی
+        product_id = get_product_id_by_sku(sku)
+        if product_id:
+            product_ids[sku] = product_id
+        else:
+            invalid_skus.append(sku)
+
+    if invalid_skus:
+        await update.message.reply_text(f"این SKUها پیدا نشدن: {', '.join(invalid_skus)}")
+        return LINK_PRODUCTS
+
+    # آپدیت Cross-Sells برای هر محصول
+    for sku, product_id in product_ids.items():
+        cross_sell_skus = [s for s in skus if s != sku]  # SKU خودش رو حذف می‌کنه
+        cross_sell_ids = [product_ids[s] for s in cross_sell_skus]
+        update_cross_sells(product_id, cross_sell_ids)
+        await update.message.reply_text(f"محصول {sku} با موفقیت به محصولات مرتبط لینک شد.")
+
+    user_data.pop(user_id, None)
+    return ConversationHandler.END
+
 # تابع برای مدیریت درخواست‌های Webhook
 async def webhook_handler(request):
     update = await request.json()
@@ -770,7 +840,8 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
-            CommandHandler("edit", edit_start)
+            CommandHandler("edit", edit_start),
+            CommandHandler("link_products", link_products_start)  # دستور جدید
         ],
         states={
             TITLE: [MessageHandler(filters.Text() & ~filters.Command(), get_title)],
@@ -807,7 +878,8 @@ def main() -> None:
             EDIT_PRICE: [MessageHandler(filters.Text() & ~filters.Command(), edit_price)],
             EDIT_STOCK_MODE: [CallbackQueryHandler(edit_stock_mode, pattern='^stock_')],
             EDIT_STOCK_UNIFORM: [MessageHandler(filters.Text() & ~filters.Command(), edit_stock_uniform)],
-            EDIT_STOCK_ARRAY: [MessageHandler(filters.Text() & ~filters.Command(), edit_stock_array)]
+            EDIT_STOCK_ARRAY: [MessageHandler(filters.Text() & ~filters.Command(), edit_stock_array)],
+            LINK_PRODUCTS: [MessageHandler(filters.Text() & ~filters.Command(), link_products)]  # مرحله جدید
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False
