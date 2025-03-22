@@ -131,12 +131,19 @@ def create_product_in_woocommerce(product_json):
     url = f"{WP_URL}/wp-json/wc/v3/products"
     auth = (WP_CONSUMER_KEY, WP_CONSUMER_SECRET)
     variations = product_json.pop("variations", [])
+    # فعال کردن مدیریت موجودی برای محصول
+    product_json["manage_stock"] = True
     response = requests.post(url, auth=auth, json=product_json)
     if response.status_code == 201:
         product_id = response.json().get("id")
         for variation in variations:
             variation_url = f"{WP_URL}/wp-json/wc/v3/products/{product_id}/variations"
             requests.post(variation_url, auth=auth, json=variation)
+        # آپدیت وضعیت محصول بعد از ایجاد
+        update_product_in_woocommerce(product_id, {
+            "manage_stock": True,
+            "stock_status": "instock"  # چون موقع ایجاد محصول، موجودی 10 تنظیم شده
+        })
         return product_id
     error_message = response.json().get("message", "خطایی رخ داد")
     logger.error(f"خطا در ارسال محصول به ووکامرس: {response.status_code} - {response.text}")
@@ -173,6 +180,9 @@ def update_variations_stock(product_id, stock_data):
         logger.error(f"خطا در گرفتن متغیرها: {variations_response.status_code} - {variations_response.text}")
         raise Exception("مشکلی در گرفتن متغیرهای محصول پیش اومد.")
 
+    # فعال کردن مدیریت موجودی برای محصول
+    update_product_in_woocommerce(product_id, {"manage_stock": True})
+
     variations = variations_response.json()
     has_stock = False  # برای چک کردن اینکه آیا حداقل یکی از متغیرها موجوده
 
@@ -199,8 +209,9 @@ def update_variations_stock(product_id, stock_data):
             if stock > 0:
                 has_stock = True
 
-    # آپدیت وضعیت کلی محصول
+    # آپدیت وضعیت کلی محصول (دوباره برای اطمینان)
     update_product_in_woocommerce(product_id, {
+        "manage_stock": True,  # مطمئن می‌شیم مدیریت موجودی فعاله
         "stock_status": "instock" if has_stock else "outofstock"
     })
 
