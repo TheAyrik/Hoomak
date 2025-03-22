@@ -416,40 +416,6 @@ async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return SKU
     else:
         usage = data.replace("usage_", "")
-        if usage not in user_data[user_id]["usage"]:
-            user_data[user_id]["usage"].append(usage)
-        usages = get_attribute_terms(6)
-        keyboard = []
-        for usage_item in usages:
-            button_text = f"{usage_item['name']} ✅" if usage_item["name"] in user_data[user_id]["usage"] else usage_item["name"]
-            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"usage_{usage_item['name']}")])
-        keyboard.append([InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")])
-        keyboard.append([InlineKeyboardButton("هیچ‌کدام", callback_data="usage_none")])
-        keyboard.append([InlineKeyboardButton("اتمام انتخاب کاربرد", callback_data="usage_done")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.edit_text("کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):", reply_markup=reply_markup)
-        return USAGE
-
-# گرفتن کاربرد جدید
-async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    user_id = str(query.from_user.id)
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    if "usage" not in user_data[user_id]:
-        user_data[user_id]["usage"] = []
-    data = query.data
-
-    if data == "usage_new":
-        await query.message.reply_text("کاربرد جدید رو بنویس (مثلاً ورزشی):")
-        return USAGE
-    elif data == "usage_done" or data == "usage_none":
-        await query.message.delete()
-        await query.message.reply_text("SKU محصول رو بنویس (مثلاً NK-J23-WB-M):")
-        return SKU
-    else:
-        usage = data.replace("usage_", "")
         # اگه کاربرد قبلاً انتخاب شده، حذفش کن
         if usage in user_data[user_id]["usage"]:
             user_data[user_id]["usage"].remove(usage)
@@ -476,6 +442,36 @@ async def get_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 reply_markup=reply_markup
             )
         return USAGE
+
+# گرفتن کاربرد جدید
+async def get_usage_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    if "usage" not in user_data[user_id]:
+        user_data[user_id]["usage"] = []
+    usage = update.message.text
+    new_usage = add_attribute_term(6, usage)
+    if new_usage:
+        user_data[user_id]["usage"].append(new_usage)
+    else:
+        user_data[user_id]["usage"].append(usage)
+    usages = get_attribute_terms(6)
+    keyboard = []
+    for usage_item in usages:
+        button_text = f"{usage_item['name']} ✅" if usage_item["name"] in user_data[user_id]["usage"] else usage_item["name"]
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"usage_{usage_item['name']}")])
+    keyboard.append([InlineKeyboardButton("اضافه کردن کاربرد جدید", callback_data="usage_new")])
+    keyboard.append([InlineKeyboardButton("هیچ‌کدام", callback_data="usage_none")])
+    keyboard.append([InlineKeyboardButton("اتمام انتخاب کاربرد", callback_data="usage_done")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.bot.edit_message_text(
+        chat_id=update.message.chat_id,
+        message_id=user_data[user_id]["usage_message_id"],
+        text="کاربرد محصول رو انتخاب کن (برای چند کاربرد، چند بار انتخاب کن):",
+        reply_markup=reply_markup
+    )
+    return USAGE
 
 # گرفتن SKU
 async def get_sku(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
