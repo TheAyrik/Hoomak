@@ -1,0 +1,5 @@
+python-telegram-bot[webhooks]==20.8
+requests
+python-dotenv
+aiohttp
+colorlog
