@@ -7,6 +7,7 @@ from config.constants import (
 from utils.user_data import user_data
 from utils.telegram_utils import send_message_with_keyboard, delete_previous_message
 from utils.woocommerce import wc_client
+from telegram import InlineKeyboardButton
 
 async def get_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """گرفتن عنوان محصول."""
